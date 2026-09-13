@@ -74,14 +74,23 @@ tool-open attempts, who, when, and whether they were let in.
 
 ## Onboard a brand new app
 
-1. In that app's own repo, add a `Dockerfile` (copy `Dockerfile.quotation-tool`
-   from the fb-rate-engine repo as a starting point) so it builds into a
-   container listening on some port.
-2. In this repo's `Caddyfile`, copy one of the `handle /quotation-tool/*`
-   blocks, change the slug and the backend service name/port.
-3. In `docker-compose.yml`, add a new service block for it (copy the
-   `quotation-tool` one), pointing `image:` at an env var for that app's
-   built image tag; add that var to `.env.example`.
-4. In `config/config.yaml`, add it under `apps:` (start with `public: false`
-   until you're ready).
-5. Commit, push.
+This never needs devops -- the one pipeline they set up already watches this
+repo and knows how to build whatever's listed under `apps/`.
+
+1. In that app's own repo (a brand new repo is fine), add a `Dockerfile`
+   (copy `Dockerfile.quotation-tool` from the fb-rate-engine repo as a
+   starting point) so it builds into a container listening on some port.
+2. In *this* repo, create `apps/<slug>/source.yaml` (copy
+   `apps/quotation-tool/source.yaml`) pointing at that app's repo, git ref,
+   and Dockerfile.
+3. In `Caddyfile`, copy one of the `handle /quotation-tool/*` blocks, change
+   the slug and the backend service name/port.
+4. In `docker-compose.yml`, add a new service block for it (copy the
+   `quotation-tool` one) -- the image line follows the same
+   `${REGISTRY}/<slug>:latest` pattern, nothing new to invent.
+5. In `config/config.yaml`, add it under `apps:` (start with `public: false`
+   until you're ready) and add it to whichever `roles:` should be able to
+   open it.
+6. Commit, push. The existing pipeline builds and deploys it -- that's the
+   whole point of routing new tools through this manifest instead of a
+   pipeline-per-tool.

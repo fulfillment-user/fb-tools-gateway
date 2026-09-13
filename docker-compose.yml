@@ -1,10 +1,11 @@
-# Production shape: each app is a pre-built image (from its OWN repo's
-# pipeline), pulled by tag. Point *_IMAGE at whatever your pipeline pushes to
-# (Artifact Registry, etc.) via a .env file or the deploy environment --
-# nothing here should hardcode a registry path.
+# Production shape: every image is pre-built and pushed by
+# scripts/build_and_deploy.py, tagged ${REGISTRY}/<slug>:latest -- one
+# consistent naming convention, no per-app env var to remember to add. New
+# apps just need a new service block here (copy the quotation-tool one) plus
+# an apps/<slug>/source.yaml -- see docs/RUNBOOK.md.
 #
-# For local testing on a laptop instead, use docker-compose.local.yml, which
-# builds the same services from source on disk. See docs/RUNBOOK.md.
+# For local testing on a laptop instead (builds from source on disk rather
+# than pulling), use docker-compose.local.yml. See docs/RUNBOOK.md.
 services:
   caddy:
     image: caddy:2.8-alpine
@@ -20,11 +21,10 @@ services:
       - auth-service
 
   auth-service:
-    build: ./auth-service
-    image: ${AUTH_SERVICE_IMAGE:-fb-tools-auth-service:local}
+    image: ${REGISTRY:?set REGISTRY, see docs/DEVOPS_HANDOFF.md}/auth-service:latest
     restart: unless-stopped
     environment:
-      SESSION_SECRET: ${SESSION_SECRET:?set a real random secret in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?set a real random secret, not committed to git}
       GATEWAY_CONFIG: /config/config.yaml
       GATEWAY_LOG_DB: /data/access_log.sqlite3
     volumes:
@@ -32,7 +32,7 @@ services:
       - gateway_log_data:/data
 
   quotation-tool:
-    image: ${QUOTATION_TOOL_IMAGE:?set to the fb-rate-engine pipeline's built image tag}
+    image: ${REGISTRY:?set REGISTRY, see docs/DEVOPS_HANDOFF.md}/quotation-tool:latest
     restart: unless-stopped
     expose:
       - "8505"

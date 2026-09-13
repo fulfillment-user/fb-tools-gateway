@@ -2,14 +2,18 @@
 # of pulling pre-built images, so you can test the whole gateway before any
 # pipeline exists. Run with:
 #
-#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+#   REGISTRY=local docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 #
 # The quotation-tool path below assumes this repo and fb-rate-engine are
 # checked out as siblings under the same parent folder -- adjust the context
 # path if yours differ.
 services:
+  auth-service:
+    build: ./auth-service
+    image: local/auth-service:local
+
   quotation-tool:
     build:
       context: "../Desktop/Fulfillment Bridge/Pricing engine/fb-rate-engine"
       dockerfile: Dockerfile.quotation-tool
-    image: fb-quotation-tool:local
+    image: local/quotation-tool:local
