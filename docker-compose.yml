@@ -1,0 +1,43 @@
+# Production shape: each app is a pre-built image (from its OWN repo's
+# pipeline), pulled by tag. Point *_IMAGE at whatever your pipeline pushes to
+# (Artifact Registry, etc.) via a .env file or the deploy environment --
+# nothing here should hardcode a registry path.
+#
+# For local testing on a laptop instead, use docker-compose.local.yml, which
+# builds the same services from source on disk. See docs/RUNBOOK.md.
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - auth-service
+
+  auth-service:
+    build: ./auth-service
+    image: ${AUTH_SERVICE_IMAGE:-fb-tools-auth-service:local}
+    restart: unless-stopped
+    environment:
+      SESSION_SECRET: ${SESSION_SECRET:?set a real random secret in .env}
+      GATEWAY_CONFIG: /config/config.yaml
+      GATEWAY_LOG_DB: /data/access_log.sqlite3
+    volumes:
+      - ./config/config.yaml:/config/config.yaml:ro
+      - gateway_log_data:/data
+
+  quotation-tool:
+    image: ${QUOTATION_TOOL_IMAGE:?set to the fb-rate-engine pipeline's built image tag}
+    restart: unless-stopped
+    expose:
+      - "8505"
+
+volumes:
+  caddy_data:
+  caddy_config:
+  gateway_log_data:

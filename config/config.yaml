@@ -1,0 +1,23 @@
+# FB Tools Gateway -- who can see what.
+#
+# This file IS the admin panel: edit it, commit, push -- the pipeline
+# rebuilds and redeploys automatically, no server access needed.
+#
+# apps.<slug>.public: false means the tool is switched off for EVERYONE,
+# even admins, until flipped to true ("host app A").
+#
+# users.<name>.apps: a list of app slugs this person may open, or ["*"] for
+# everything. Never write a plaintext password here -- generate the hash
+# with auth-service/hash_password.py and paste only the hash.
+
+apps:
+  quotation-tool:
+    display_name: "FB Quotation Tool"
+    public: false
+
+users:
+  kais:
+    display_name: "Kais"
+    password_hash: "$2b$12$JK4//IC/ufxUl0asM0XUe.TkBBc0RHEplfWjRt9R.T06SzAHLZyES"
+    is_admin: true
+    apps: ["*"]

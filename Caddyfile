@@ -1,0 +1,43 @@
+{
+	email admin@fulfillmentbridge.com
+}
+
+tools.fulfillmentbridge.com {
+	# Anyone can reach the login/logout/landing/admin pages on the auth
+	# service directly -- it does its own session checks for /admin.
+	handle /login* {
+		reverse_proxy auth-service:8000
+	}
+	handle /logout* {
+		reverse_proxy auth-service:8000
+	}
+	handle /admin* {
+		reverse_proxy auth-service:8000
+	}
+	handle / {
+		reverse_proxy auth-service:8000
+	}
+
+	# --- Per-app routes below -----------------------------------------
+	# Onboarding a new app = copy one of these blocks, change the slug and
+	# the backend address, add the matching entry to config/config.yaml.
+	# See docs/RUNBOOK.md.
+
+	handle /quotation-tool/* {
+		forward_auth auth-service:8000 {
+			uri /verify
+		}
+		reverse_proxy quotation-tool:8505
+	}
+
+	handle_errors {
+		@needs_login expression {http.error.status_code} == 401
+		handle @needs_login {
+			redir * /login?next={http.request.orig_uri} 302
+		}
+		@forbidden expression {http.error.status_code} == 403
+		handle @forbidden {
+			respond "You don't have access to this tool. Ask Kais for access." 403
+		}
+	}
+}

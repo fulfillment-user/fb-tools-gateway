@@ -1,0 +1,15 @@
+# Local-machine override -- builds every service from source on disk instead
+# of pulling pre-built images, so you can test the whole gateway before any
+# pipeline exists. Run with:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+#
+# The quotation-tool path below assumes this repo and fb-rate-engine are
+# checked out as siblings under the same parent folder -- adjust the context
+# path if yours differ.
+services:
+  quotation-tool:
+    build:
+      context: "../Desktop/Fulfillment Bridge/Pricing engine/fb-rate-engine"
+      dockerfile: Dockerfile.quotation-tool
+    image: fb-quotation-tool:local
