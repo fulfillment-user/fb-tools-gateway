@@ -5,6 +5,22 @@ The pipeline your devops team sets up (see `docs/DEVOPS_HANDOFF.md`) rebuilds
 and redeploys automatically on every push -- there is no server to log into
 for any of this.
 
+## Create a role (a named bundle of tools)
+
+Roles are how you avoid listing individual tools on every person. Add one
+under `roles:` in `config/config.yaml`:
+
+```yaml
+roles:
+  sales:
+    apps: ["quotation-tool"]
+  ops:
+    apps: ["quotation-tool", "dhl-csv-tool"]
+```
+
+A person can hold more than one role -- their actual access is everything
+across all their roles, combined. Commit, push.
+
 ## Give someone a login
 
 1. Pick a password for them (or generate one).
@@ -14,21 +30,27 @@ for any of this.
    pip install -r requirements.txt   # once
    python3 hash_password.py "their-password"
    ```
-3. Open `config/config.yaml`, add them under `users:`:
+3. Open `config/config.yaml`, add them under `users:`, listing one or more
+   roles:
    ```yaml
    users:
      sami:
        display_name: "Sami"
        password_hash: "<paste the hash from step 2>"
        is_admin: false
-       apps: ["quotation-tool"]     # only the tools they should see
+       roles: ["sales"]
    ```
+   Need to hand someone a single extra tool that doesn't fit any existing
+   role? `apps: ["some-tool"]` works directly on the user too, alongside (or
+   instead of) `roles:` -- it's just additive.
 4. Commit and push. Give the person their username + the *plaintext*
    password you chose in step 1 (never write the plaintext anywhere in this
    repo -- only the hash).
 
-To remove someone's access, delete their block from `users:` (or just remove
-the app slug from their `apps:` list to narrow it), commit, push.
+To change what someone can reach, edit their `roles:` list (add/remove role
+names) rather than touching individual tools -- that's the whole point of a
+role. To remove someone's access entirely, delete their block from `users:`.
+Removing a tool from a role instantly narrows everyone who holds that role.
 
 ## Switch a tool on or off ("host app A")
 

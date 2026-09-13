@@ -6,18 +6,28 @@
 # apps.<slug>.public: false means the tool is switched off for EVERYONE,
 # even admins, until flipped to true ("host app A").
 #
-# users.<name>.apps: a list of app slugs this person may open, or ["*"] for
-# everything. Never write a plaintext password here -- generate the hash
-# with auth-service/hash_password.py and paste only the hash.
+# roles.<name>.apps: the set of app slugs that role grants.
+#
+# users.<name>.roles: one or more role names -- a user's actual access is the
+# UNION of every role they hold. users.<name>.apps is still allowed too, as a
+# one-off grant for a person who needs one extra tool that doesn't warrant
+# creating a whole new role for. is_admin is separate from roles/apps
+# entirely -- it grants everything plus the /admin access-log page.
+#
+# Never write a plaintext password here -- generate the hash with
+# auth-service/hash_password.py and paste only the hash.
 
 apps:
   quotation-tool:
     display_name: "FB Quotation Tool"
     public: false
 
+roles:
+  sales:
+    apps: ["quotation-tool"]
+
 users:
   kais:
     display_name: "Kais"
     password_hash: "$2b$12$JK4//IC/ufxUl0asM0XUe.TkBBc0RHEplfWjRt9R.T06SzAHLZyES"
     is_admin: true
-    apps: ["*"]

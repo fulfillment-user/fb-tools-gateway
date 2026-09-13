@@ -56,10 +56,25 @@ def get_user_cfg(cfg, username):
     return (cfg.get("users") or {}).get(username)
 
 
-def user_can_access(user_cfg, slug):
+def get_role_cfg(cfg, role_name):
+    return (cfg.get("roles") or {}).get(role_name)
+
+
+def user_apps(cfg, user_cfg):
+    """Effective set of app slugs a user can reach: the union of every role
+    they hold's apps, plus any one-off 'apps' listed directly on the user
+    (kept as an escape hatch for a grant that doesn't warrant its own role)."""
+    apps = set(user_cfg.get("apps") or [])
+    for role_name in user_cfg.get("roles") or []:
+        role_cfg = get_role_cfg(cfg, role_name) or {}
+        apps.update(role_cfg.get("apps") or [])
+    return apps
+
+
+def user_can_access(cfg, user_cfg, slug):
     if user_cfg.get("is_admin"):
         return True
-    allowed = user_cfg.get("apps") or []
+    allowed = user_apps(cfg, user_cfg)
     return "*" in allowed or slug in allowed
 
 
@@ -142,7 +157,7 @@ def verify(request: Request):
         log_access(username, slug, "unknown_user", ip)
         return PlainTextResponse("Login required", status_code=401)
 
-    if not user_can_access(user_cfg, slug):
+    if not user_can_access(cfg, user_cfg, slug):
         log_access(username, slug, "denied", ip)
         return PlainTextResponse("You don't have access to this tool.", status_code=403)
 
@@ -239,7 +254,7 @@ def landing(request: Request):
     for slug, app_cfg in (cfg.get("apps") or {}).items():
         if not app_cfg.get("public", False):
             continue
-        if not user_can_access(user_cfg, slug):
+        if not user_can_access(cfg, user_cfg, slug):
             continue
         rows.append(f'<a class=tool href="/{slug}/">{app_cfg.get("display_name", slug)}</a>')
     if user_cfg.get("is_admin"):
