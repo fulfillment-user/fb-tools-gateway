@@ -29,6 +29,14 @@ def current_user() -> str:
     return request.headers.get("X-Auth-User", "unknown")
 
 
+@app.route("/")
+def root_redirect():
+    # Only ever hit when running standalone (locally, or direct-to-container
+    # without Caddy in front) -- through the real gateway, Caddy's own "/"
+    # route goes to auth-service, never here. Convenience only.
+    return redirect(f"{BASE}/")
+
+
 CSS = """
 <style>
   body { font-family: -apple-system, sans-serif; max-width: 1000px; margin: 30px auto; color: #222; padding: 0 16px; }
