@@ -169,6 +169,9 @@ def verify(request: Request):
     # reading config.yaml itself. Only trustworthy because that backend is
     # never reachable except through Caddy -- see docker-compose.yml.
     headers = {"X-Auth-User": username}
+    display_name = user_cfg.get("display_name")
+    if display_name:
+        headers["X-Auth-DisplayName"] = display_name
     calendly_url = user_cfg.get("calendly_url")
     if calendly_url:
         headers["X-Auth-Calendly"] = calendly_url

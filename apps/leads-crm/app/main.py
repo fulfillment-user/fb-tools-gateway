@@ -29,6 +29,10 @@ def current_user() -> str:
     return request.headers.get("X-Auth-User", "unknown")
 
 
+def current_display_name() -> str:
+    return request.headers.get("X-Auth-DisplayName") or current_user()
+
+
 def current_calendly() -> str:
     return request.headers.get("X-Auth-Calendly") or llm.DEFAULT_CALENDLY_URL
 
@@ -265,11 +269,73 @@ def suggest_route(lead_id):
         ).fetchall()
         try:
             suggestion_id = llm.generate_suggestion(
-                conn, lead, notes, current_user(), calendly_url=current_calendly())
+                conn, lead, notes, current_user(),
+                calendly_url=current_calendly(), sender_name=current_display_name())
         except llm.SuggestionError as e:
             from urllib.parse import quote
             return redirect(f"{BASE}/lead/{lead_id}?suggest_error={quote(str(e))}")
     return redirect(f"{BASE}/lead/{lead_id}/suggestion/{suggestion_id}")
+
+
+# Same template Kais already uses for CEPEX cold-outreach drafts (see e.g.
+# cepex_scraper/outreach_drafts/*/*.html) -- a standalone HTML page with a
+# "copy formatted email" button that range-selects #email-body and uses
+# execCommand('copy'), so pasting into Gmail keeps bold/bullets/links intact
+# instead of landing as one flat paragraph. Reused as-is (not the app's own
+# CSS/BASE chrome) since the whole point is this page also works as a
+# forwarded/saved standalone file, same as the CEPEX ones.
+SUGGESTION_PAGE = """<!DOCTYPE html>
+<html lang="{lang}">
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>
+  body {{ font-family: Arial, Helvetica, sans-serif; max-width: 720px; margin: 24px auto; color: #111; padding: 0 16px; }}
+  .backlink {{ font-size: 13px; color: #666; text-decoration: none; }}
+  .meta {{ background: #f2f2f2; padding: 10px 14px; border-radius: 6px; margin: 14px 0 18px; font-size: 14px; }}
+  .meta b {{ color: #b00; }}
+  .reasoning {{ font-size: 12.5px; color: #888; margin-bottom: 16px; }}
+  #copybtn {{ background: #1a73e8; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-size: 14px; cursor: pointer; margin-bottom: 20px; }}
+  #copybtn:active {{ background: #0d5bba; }}
+  #status {{ margin-left: 10px; font-size: 13px; color: #067d06; }}
+  #email-body p {{ line-height: 1.5; margin: 0 0 14px 0; }}
+  #email-body ul {{ margin: 0 0 14px 0; padding-left: 22px; }}
+  #email-body li {{ margin-bottom: 6px; line-height: 1.5; }}
+  #email-body a {{ color: #1a73e8; }}
+</style>
+</head>
+<body>
+  <a class="backlink" href="{lead_url}">&larr; {lead_name}</a>
+  <div class="meta">Destinataire : <b>{recipient}</b> &middot; Categorie : {category} &middot; Sources : {sources}</div>
+  <div class="reasoning">{reasoning}</div>
+  {content}
+</body>
+</html>"""
+
+COPY_APPARATUS = """
+  <button id="copybtn" onclick="copyEmail()">Copier l'email (formate)</button>
+  <span id="status"></span>
+  <div id="email-body">
+    {body}
+  </div>
+<script>
+function copyEmail() {{
+  var node = document.getElementById('email-body');
+  var range = document.createRange();
+  range.selectNodeContents(node);
+  var sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  try {{
+    document.execCommand('copy');
+    document.getElementById('status').textContent = 'Copie -- collez directement dans Gmail (Cmd+V)';
+  }} catch (e) {{
+    document.getElementById('status').textContent = 'Copie echouee -- selectionnez le texte manuellement et Cmd+C';
+  }}
+  sel.removeAllRanges();
+}}
+</script>
+"""
 
 
 @app.route(f"{BASE}/lead/<int:lead_id>/suggestion/<int:suggestion_id>")
@@ -281,29 +347,21 @@ def suggestion_detail(lead_id, suggestion_id):
         if not lead or not s:
             abort(404)
 
+    sources = ", ".join(json.loads(lead["sources"])) or "&mdash;"
+    recipient = lead["email"] or lead["phone"] or "&mdash;"
+
     if s["action_type"] == "no_action":
-        body_html = "<p>No action recommended right now.</p>"
+        content = "<p style='color:#666'>No action recommended right now -- nothing to send.</p>"
     else:
-        body_html = (
-            (f"<div class=kv><b>Subject</b> {s['subject']}</div>" if s["subject"] else "")
-            + f'<textarea readonly rows=14 onclick="this.select()">{s["body"] or ""}</textarea>'
-            + "<p style='color:#999;font-size:12px'>Click the text to select it all, then copy.</p>"
-        )
+        content = COPY_APPARATUS.format(body=s["body"] or "")
 
-    return CSS + f"""
-    <a class=back href="{BASE}/lead/{lead_id}">&larr; {lead['name']}</a>
-    <h1>Follow-up suggestion</h1>
-    <div class=sub>{s['created_at']} &middot; suggested by {s['created_by']} &middot; model {s['model']}</div>
-
-    <div class=card>
-      <div class=kv><b>Action</b> {s['action_type']}</div>
-      <div class=kv><b>Why</b> {s['reasoning'] or '&mdash;'}</div>
-    </div>
-
-    <div class=card>
-      {body_html}
-    </div>
-    """
+    return SUGGESTION_PAGE.format(
+        lang="fr", title=f"{lead['name']} : Fulfillment Bridge",
+        lead_url=f"{BASE}/lead/{lead_id}", lead_name=lead["name"],
+        recipient=recipient, category=lead["category"] or "&mdash;", sources=sources,
+        reasoning=f"{s['created_at']} &middot; suggested by {s['created_by']} &middot; {s['reasoning'] or ''}",
+        content=content,
+    )
 
 
 # Run the (idempotent) seed import at import time, before the first request

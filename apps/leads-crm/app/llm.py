@@ -30,8 +30,8 @@ MODEL = "claude-sonnet-5"
 DEFAULT_CALENDLY_URL = "https://calendly.com/kais-khadhraoui/catch-up-with-kais"
 
 PROMPT_TEMPLATE = """You are a sales assistant deciding the best next action for one B2B lead, \
-for a Tunisia-based fulfillment/logistics company (Fulfillment Bridge) reaching out to \
-exporters and craft businesses.
+for Fulfillment Bridge (a Tunisia-based cross-border e-commerce fulfillment/logistics company) \
+reaching out to exporters and craft businesses. {sender_name} is the person who will send this.
 
 LEAD
 Name: {name}
@@ -45,23 +45,30 @@ NOTES (oldest first, this is the full history of contact with this lead):
 {notes_block}
 
 Decide ONE next action:
-- "email": a follow-up email is the right next step. Draft a real, ready-to-send email \
-(French if the lead appears Tunisian/francophone -- true for most leads here -- otherwise \
-English). Keep it concise, warm but professional, reference something specific from the notes \
-so it doesn't read as generic, and end with one clear, single next step.
+- "email": a follow-up email is the right next step.
 - "calendly": the notes suggest this lead is ready for a live conversation (interested, asked \
-a question only a call can answer, has been back-and-forth over email already, etc). Draft a \
-short message inviting them to book a slot, in the same language logic as above. The booking \
-link will be appended automatically -- do not invent one yourself, just write the message \
-around it (e.g. "you can grab a slot here:").
+a question only a call can answer, has been back-and-forth over email already, etc).
 - "no_action": there's nothing to do yet (e.g. no notes, or the last note already says a \
 follow-up is scheduled and nothing has changed since).
+
+For "email" or "calendly", write body_html as the COMPLETE email body as HTML -- this is pasted \
+directly into a Gmail compose window (rich text, not plain text), so use ONLY <p>, <b>, <ul>, \
+<li> and <a href="..."> tags, no markdown, no plain newlines for paragraph breaks (use separate \
+<p> tags instead). Structure, in order:
+  1. <p><b>Objet : ...</b></p> -- the subject line, bolded, as the first line of the body itself.
+  2. <p>Bonjour,</p> (or "Hi," in English) then the message -- concise, warm but professional, \
+reference something SPECIFIC from the notes so it doesn't read as generic, one clear single next \
+step. For "calendly", write the invite text but do NOT invent or include a booking link \
+yourself -- one is appended automatically after your content.
+  3. Sign off as {sender_name}, Fulfillment Bridge.
+Write in French if the lead appears Tunisian/francophone (true for most leads here), otherwise \
+English.
 
 Respond with ONLY a JSON object, no markdown fences, no other text:
 {{"action_type": "email" | "calendly" | "no_action",
   "reasoning": "one or two sentences on why this action, referencing the notes",
-  "subject": "email subject line, or null if action_type is not email",
-  "body": "the drafted message body (email text, or the calendly invite text), or null if no_action"}}
+  "subject": "plain-text subject line (no HTML), or null if action_type is not email/calendly",
+  "body_html": "the complete HTML email body as described above, or null if no_action"}}
 """
 
 
@@ -92,12 +99,14 @@ def _parse_response(text: str) -> dict:
     return data
 
 
-def generate_suggestion(conn, lead_row, notes_rows, author: str, calendly_url: str = None):
+def generate_suggestion(conn, lead_row, notes_rows, author: str, calendly_url: str = None,
+                         sender_name: str = None):
     """lead_row / notes_rows: sqlite3.Row objects from db.py's own queries.
     Returns the new lead_suggestions row id. Raises SuggestionError on any
     failure (missing key, bad model output) -- callers show that message
     rather than silently producing a blank/broken suggestion."""
     calendly_url = calendly_url or DEFAULT_CALENDLY_URL
+    sender_name = sender_name or author
 
     notes_snapshot = [{"created_at": n["created_at"], "author": n["author"], "text": n["text"]}
                        for n in notes_rows]
@@ -105,7 +114,7 @@ def generate_suggestion(conn, lead_row, notes_rows, author: str, calendly_url: s
                              for n in notes_rows) or "(no notes yet)"
 
     prompt = PROMPT_TEMPLATE.format(
-        name=lead_row["name"], category=lead_row["category"] or "unknown",
+        sender_name=sender_name, name=lead_row["name"], category=lead_row["category"] or "unknown",
         stage=lead_row["stage"], phone=lead_row["phone"] or "none on file",
         email=lead_row["email"] or "none on file", address=lead_row["address"] or "none on file",
         notes_block=notes_block,
@@ -113,14 +122,14 @@ def generate_suggestion(conn, lead_row, notes_rows, author: str, calendly_url: s
 
     client = _client()
     response = client.messages.create(
-        model=MODEL, max_tokens=1024, messages=[{"role": "user", "content": prompt}],
+        model=MODEL, max_tokens=1536, messages=[{"role": "user", "content": prompt}],
     )
     raw_text = "".join(block.text for block in response.content if block.type == "text")
     data = _parse_response(raw_text)
 
-    body = data.get("body")
+    body = data.get("body_html")
     if data["action_type"] == "calendly" and body:
-        body = f"{body}\n\n{calendly_url}"
+        body = f'{body}<p><a href="{calendly_url}">{calendly_url}</a></p>'
 
     return db.save_suggestion(
         conn, lead_id=lead_row["id"], created_by=author, action_type=data["action_type"],

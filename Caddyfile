@@ -34,7 +34,7 @@ tools.fulfillmentbridge.com {
 	handle /leads-crm/* {
 		forward_auth auth-service:8000 {
 			uri /verify
-			copy_headers X-Auth-User X-Auth-Calendly
+			copy_headers X-Auth-User X-Auth-Calendly X-Auth-DisplayName
 		}
 		reverse_proxy leads-crm:8506
 	}
