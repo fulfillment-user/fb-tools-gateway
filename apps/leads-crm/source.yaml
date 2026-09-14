@@ -1,0 +1,8 @@
+# repo: local -- this app's code lives directly in apps/leads-crm/ in this
+# repo, not pulled from elsewhere (see scripts/build_and_deploy.py). Use this
+# form for anything built specifically for this gateway; use a real repo URL
+# (like apps/quotation-tool/source.yaml does) for a tool that already has its
+# own product repo/team workflow.
+repo: local
+dockerfile: Dockerfile
+context: "."

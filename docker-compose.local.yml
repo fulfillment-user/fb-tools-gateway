@@ -17,3 +17,7 @@ services:
       context: "../Desktop/Fulfillment Bridge/Pricing engine/fb-rate-engine"
       dockerfile: Dockerfile.quotation-tool
     image: local/quotation-tool:local
+
+  leads-crm:
+    build: ./apps/leads-crm
+    image: local/leads-crm:local

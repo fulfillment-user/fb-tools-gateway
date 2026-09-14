@@ -42,19 +42,26 @@ def run(cmd, **kwargs):
 
 def build_app(slug: str, manifest_path: Path, workdir: Path, registry: str) -> str:
     manifest = yaml.safe_load(manifest_path.read_text())
-    repo = manifest["repo"]
-    ref = manifest.get("ref", "main")
     dockerfile = manifest.get("dockerfile", "Dockerfile")
     context = manifest.get("context", ".")
+    repo = manifest.get("repo", "local")
 
-    clone_dir = workdir / slug
-    print(f"\n=== {slug}: cloning {repo}@{ref} ===", flush=True)
-    run(["git", "clone", "--depth", "1", "--branch", ref, repo, str(clone_dir)])
+    if repo == "local":
+        # App's code lives directly in apps/<slug>/ in this repo -- no clone
+        # needed. Use this for anything built specifically for this gateway
+        # rather than pulled from an existing product repo.
+        build_dir = manifest_path.parent
+        print(f"\n=== {slug}: building from local apps/{slug}/ (no clone) ===", flush=True)
+    else:
+        ref = manifest.get("ref", "main")
+        build_dir = workdir / slug
+        print(f"\n=== {slug}: cloning {repo}@{ref} ===", flush=True)
+        run(["git", "clone", "--depth", "1", "--branch", ref, repo, str(build_dir)])
 
     image = f"{registry}/{slug}:latest"
     print(f"=== {slug}: building {image} ===", flush=True)
-    run(["docker", "build", "-f", str(clone_dir / dockerfile), "-t", image,
-         str(clone_dir / context)])
+    run(["docker", "build", "-f", str(build_dir / dockerfile), "-t", image,
+         str(build_dir / context)])
     run(["docker", "push", image])
     return image
 

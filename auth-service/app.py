@@ -162,7 +162,12 @@ def verify(request: Request):
         return PlainTextResponse("You don't have access to this tool.", status_code=403)
 
     log_access(username, slug, "allowed", ip)
-    return PlainTextResponse("OK")
+    # Caddy's forward_auth copies named response headers into the request it
+    # then proxies to the real backend (see Caddyfile's copy_headers) -- this
+    # is how a backend app (e.g. leads-crm) knows who's logged in without
+    # implementing any auth itself. Only trustworthy because that backend is
+    # never reachable except through Caddy -- see docker-compose.yml.
+    return PlainTextResponse("OK", headers={"X-Auth-User": username})
 
 
 # ---------------------------------------------------------------------------

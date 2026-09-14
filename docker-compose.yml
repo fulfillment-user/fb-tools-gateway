@@ -37,7 +37,18 @@ services:
     expose:
       - "8505"
 
+  leads-crm:
+    image: ${REGISTRY:?set REGISTRY, see docs/DEVOPS_HANDOFF.md}/leads-crm:latest
+    restart: unless-stopped
+    environment:
+      LEADS_DB: /data/leads.sqlite3
+    volumes:
+      - leads_crm_data:/data
+    expose:
+      - "8506"
+
 volumes:
   caddy_data:
   caddy_config:
   gateway_log_data:
+  leads_crm_data:

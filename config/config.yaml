@@ -21,10 +21,13 @@ apps:
   quotation-tool:
     display_name: "FB Quotation Tool"
     public: false
+  leads-crm:
+    display_name: "Leads CRM"
+    public: false
 
 roles:
   sales:
-    apps: ["quotation-tool"]
+    apps: ["quotation-tool", "leads-crm"]
 
 users:
   kais:

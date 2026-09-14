@@ -26,8 +26,17 @@ tools.fulfillmentbridge.com {
 	handle /quotation-tool/* {
 		forward_auth auth-service:8000 {
 			uri /verify
+			copy_headers X-Auth-User
 		}
 		reverse_proxy quotation-tool:8505
+	}
+
+	handle /leads-crm/* {
+		forward_auth auth-service:8000 {
+			uri /verify
+			copy_headers X-Auth-User
+		}
+		reverse_proxy leads-crm:8506
 	}
 
 	handle_errors {
