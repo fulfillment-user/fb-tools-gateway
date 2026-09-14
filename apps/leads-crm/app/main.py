@@ -17,7 +17,7 @@ only trustworthy because leads-crm is never reachable except through Caddy
 from flask import Flask, request, redirect, abort
 import json
 
-from . import db
+from . import db, llm
 from .seed import main as run_seed
 
 BASE = "/leads-crm"
@@ -27,6 +27,10 @@ app = Flask(__name__)
 
 def current_user() -> str:
     return request.headers.get("X-Auth-User", "unknown")
+
+
+def current_calendly() -> str:
+    return request.headers.get("X-Auth-Calendly") or llm.DEFAULT_CALENDLY_URL
 
 
 @app.route("/")
@@ -148,6 +152,9 @@ def lead_detail(lead_id):
         history = conn.execute(
             "SELECT * FROM lead_stage_history WHERE lead_id=? ORDER BY created_at DESC", (lead_id,)
         ).fetchall()
+        suggestions = conn.execute(
+            "SELECT * FROM lead_suggestions WHERE lead_id=? ORDER BY created_at DESC", (lead_id,)
+        ).fetchall()
 
     sources = json.loads(lead["sources"])
     source_data = json.loads(lead["source_data"])
@@ -170,6 +177,18 @@ def lead_detail(lead_id):
         f"<pre class=raw>{json.dumps(source_data.get(src, {}), indent=2, ensure_ascii=False)}</pre></details>"
         for src in sources
     )
+    action_labels = {"email": "Email drafted", "calendly": "Calendly invite drafted",
+                      "no_action": "No action recommended"}
+    suggestions_html = "".join(
+        f'<div class=note><div class=meta>{s["created_at"]} &middot; {s["created_by"]}</div>'
+        f'<a href="{BASE}/lead/{lead_id}/suggestion/{s["id"]}">'
+        f'{action_labels.get(s["action_type"], s["action_type"])}</a></div>'
+        for s in suggestions
+    ) or "<p style='color:#999'>No suggestions generated yet.</p>"
+    suggest_error = request.args.get("suggest_error")
+    suggest_error_html = (f'<div style="background:#fee;border:1px solid #c33;padding:8px;'
+                           f'margin-bottom:10px;font-size:13px;">{suggest_error}</div>'
+                           if suggest_error else "")
 
     return CSS + f"""
     <a class=back href="{BASE}/">&larr; All leads</a>
@@ -202,6 +221,15 @@ def lead_detail(lead_id):
     </div>
 
     <div class=card>
+      <h4>Follow-up suggestions</h4>
+      {suggest_error_html}
+      <form method=post action="{BASE}/lead/{lead_id}/suggest">
+        <button type=submit>Suggest follow-up</button>
+      </form>
+      {suggestions_html}
+    </div>
+
+    <div class=card>
       <h4>Source data</h4>
       {source_blocks}
     </div>
@@ -224,6 +252,58 @@ def set_stage_route(lead_id):
         with db.get_db() as conn:
             db.set_stage(conn, lead_id, stage, current_user())
     return redirect(f"{BASE}/lead/{lead_id}")
+
+
+@app.route(f"{BASE}/lead/<int:lead_id>/suggest", methods=["POST"])
+def suggest_route(lead_id):
+    with db.get_db() as conn:
+        lead = conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
+        if not lead:
+            abort(404)
+        notes = conn.execute(
+            "SELECT * FROM lead_notes WHERE lead_id=? ORDER BY created_at ASC", (lead_id,)
+        ).fetchall()
+        try:
+            suggestion_id = llm.generate_suggestion(
+                conn, lead, notes, current_user(), calendly_url=current_calendly())
+        except llm.SuggestionError as e:
+            from urllib.parse import quote
+            return redirect(f"{BASE}/lead/{lead_id}?suggest_error={quote(str(e))}")
+    return redirect(f"{BASE}/lead/{lead_id}/suggestion/{suggestion_id}")
+
+
+@app.route(f"{BASE}/lead/<int:lead_id>/suggestion/<int:suggestion_id>")
+def suggestion_detail(lead_id, suggestion_id):
+    with db.get_db() as conn:
+        lead = conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
+        s = conn.execute("SELECT * FROM lead_suggestions WHERE id=? AND lead_id=?",
+                          (suggestion_id, lead_id)).fetchone()
+        if not lead or not s:
+            abort(404)
+
+    if s["action_type"] == "no_action":
+        body_html = "<p>No action recommended right now.</p>"
+    else:
+        body_html = (
+            (f"<div class=kv><b>Subject</b> {s['subject']}</div>" if s["subject"] else "")
+            + f'<textarea readonly rows=14 onclick="this.select()">{s["body"] or ""}</textarea>'
+            + "<p style='color:#999;font-size:12px'>Click the text to select it all, then copy.</p>"
+        )
+
+    return CSS + f"""
+    <a class=back href="{BASE}/lead/{lead_id}">&larr; {lead['name']}</a>
+    <h1>Follow-up suggestion</h1>
+    <div class=sub>{s['created_at']} &middot; suggested by {s['created_by']} &middot; model {s['model']}</div>
+
+    <div class=card>
+      <div class=kv><b>Action</b> {s['action_type']}</div>
+      <div class=kv><b>Why</b> {s['reasoning'] or '&mdash;'}</div>
+    </div>
+
+    <div class=card>
+      {body_html}
+    </div>
+    """
 
 
 # Run the (idempotent) seed import at import time, before the first request

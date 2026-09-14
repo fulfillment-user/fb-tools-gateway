@@ -164,10 +164,15 @@ def verify(request: Request):
     log_access(username, slug, "allowed", ip)
     # Caddy's forward_auth copies named response headers into the request it
     # then proxies to the real backend (see Caddyfile's copy_headers) -- this
-    # is how a backend app (e.g. leads-crm) knows who's logged in without
-    # implementing any auth itself. Only trustworthy because that backend is
+    # is how a backend app (e.g. leads-crm) knows who's logged in, and
+    # optionally their own Calendly link, without implementing any auth or
+    # reading config.yaml itself. Only trustworthy because that backend is
     # never reachable except through Caddy -- see docker-compose.yml.
-    return PlainTextResponse("OK", headers={"X-Auth-User": username})
+    headers = {"X-Auth-User": username}
+    calendly_url = user_cfg.get("calendly_url")
+    if calendly_url:
+        headers["X-Auth-Calendly"] = calendly_url
+    return PlainTextResponse("OK", headers=headers)
 
 
 # ---------------------------------------------------------------------------

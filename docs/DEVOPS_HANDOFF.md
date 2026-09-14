@@ -80,6 +80,10 @@ Pieces, all in this repo:
    (`python3 -c "import secrets; print(secrets.token_hex(32))"`), via your
    normal secrets mechanism, not committed to git.
 
+8. **`ANTHROPIC_API_KEY`** env var, for leads-crm's "Suggest follow-up"
+   feature (calls the Anthropic API server-side) -- Kais has this key
+   already, same secrets mechanism as `SESSION_SECRET`.
+
 ## Why one script, one pipeline
 
 The obvious alternative -- a pipeline per tool's own repo -- means every new

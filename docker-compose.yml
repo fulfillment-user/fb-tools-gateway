@@ -42,6 +42,7 @@ services:
     restart: unless-stopped
     environment:
       LEADS_DB: /data/leads.sqlite3
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set for the "Suggest follow-up" feature, not committed to git}
     volumes:
       - leads_crm_data:/data
     expose:

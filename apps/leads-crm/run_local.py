@@ -14,14 +14,34 @@ matters, this file is portable: copy local_data/leads.sqlite3 onto the
 server's persistent volume before or instead of letting the container
 re-seed from scratch.
 
+For the "Suggest follow-up" feature: put ANTHROPIC_API_KEY=sk-... in a .env
+file next to this script (copy .env.example) -- loaded below, never
+committed (gitignored). Without it, everything else still works; that one
+button just shows an error instead of a draft.
+
 Usage: python3 run_local.py
 """
 import os
 from pathlib import Path
 
-os.environ.setdefault("LEADS_DB", str(Path(__file__).resolve().parent / "local_data" / "leads.sqlite3"))
+HERE = Path(__file__).resolve().parent
 
-from app.main import app  # noqa: E402  (import after env var is set)
+
+def _load_dotenv(path: Path):
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_dotenv(HERE / ".env")
+os.environ.setdefault("LEADS_DB", str(HERE / "local_data" / "leads.sqlite3"))
+
+from app.main import app  # noqa: E402  (import after env vars are set)
 
 if __name__ == "__main__":
     # 8506 is what this app listens on inside the gateway's docker network --

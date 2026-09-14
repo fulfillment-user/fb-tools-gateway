@@ -16,6 +16,11 @@
 #
 # Never write a plaintext password here -- generate the hash with
 # auth-service/hash_password.py and paste only the hash.
+#
+# users.<name>.calendly_url: optional. Leads CRM's follow-up suggestion
+# feature uses this to offer a booking link under this person's own name --
+# each rep can eventually have their own; someone with none set falls back
+# to leads-crm's hardcoded default (see apps/leads-crm/app/llm.py).
 
 apps:
   quotation-tool:
@@ -34,3 +39,4 @@ users:
     display_name: "Kais"
     password_hash: "$2b$12$JK4//IC/ufxUl0asM0XUe.TkBBc0RHEplfWjRt9R.T06SzAHLZyES"
     is_admin: true
+    calendly_url: "https://calendly.com/kais-khadhraoui/catch-up-with-kais"

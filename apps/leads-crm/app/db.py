@@ -83,8 +83,27 @@ def init_db():
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS lead_suggestions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                action_type TEXT NOT NULL,   -- 'email' | 'calendly' | 'no_action'
+                subject TEXT,
+                body TEXT,
+                calendly_url TEXT,
+                reasoning TEXT,
+                model TEXT NOT NULL,
+                notes_snapshot TEXT NOT NULL  -- JSON: the notes this suggestion was based on,
+                                              -- kept alongside the output so a later retrieval
+                                              -- system has both sides (input + decision) to index,
+                                              -- without needing to reconstruct history from
+                                              -- lead_notes at query time.
+            );
+
             CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage);
             CREATE INDEX IF NOT EXISTS idx_notes_lead ON lead_notes(lead_id);
+            CREATE INDEX IF NOT EXISTS idx_suggestions_lead ON lead_suggestions(lead_id);
         """)
 
 
@@ -148,3 +167,14 @@ def set_stage(conn, lead_id, new_stage, author):
         "VALUES (?,?,?,?,?)",
         (lead_id, old_stage, new_stage, author, now_iso()),
     )
+
+
+def save_suggestion(conn, *, lead_id, created_by, action_type, subject, body,
+                     calendly_url, reasoning, model, notes_snapshot):
+    cur = conn.execute(
+        "INSERT INTO lead_suggestions (lead_id, created_at, created_by, action_type, subject, "
+        "body, calendly_url, reasoning, model, notes_snapshot) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (lead_id, now_iso(), created_by, action_type, subject, body, calendly_url, reasoning,
+         model, json.dumps(notes_snapshot, ensure_ascii=False)),
+    )
+    return cur.lastrowid

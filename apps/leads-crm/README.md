@@ -25,6 +25,40 @@ consolidate into one record, not live as permanent separate entries.
   deployed app, whenever a new source batch should feed in (more CEPEX
   sectors scraped, a new event). Re-generates `app/seed_data.json`, which
   then needs to be committed and pushed like any other change.
+- `app/llm.py` -- the "Suggest follow-up" agent. Reads a lead's full note
+  history, asks Claude to decide the best next action (draft an email,
+  suggest a Calendly call, or nothing yet), and hands back a real
+  ready-to-use draft. Needs `ANTHROPIC_API_KEY` (see `.env.example`) -- the
+  button shows a plain error instead of a draft if it's not set, nothing
+  crashes.
+- `run_local.py` -- run this app on your own machine with no Docker/gateway
+  needed, for using it today. See its own docstring.
+
+## Follow-up suggestions -- how it works, and where it's going
+
+Per direct instruction (2026-09-14), this is deliberately a drafting aid,
+not an autonomous sender -- same human-in-the-loop principle as the wider
+email copilot vision. Clicking "Suggest follow-up" on a lead's page:
+
+1. Sends that lead's full note history to Claude, asking it to pick ONE
+   action -- draft an email, draft a Calendly invite (the booking link comes
+   from the logged-in rep's own `calendly_url` in the gateway's
+   `config/config.yaml`, falling back to `llm.DEFAULT_CALENDLY_URL` if the
+   rep has none set, or when running locally with no gateway in front at
+   all), or conclude nothing's needed yet.
+2. Stores the full result -- action, draft, reasoning, which notes it saw,
+   which model -- as its own row in `lead_suggestions`, then redirects to a
+   page showing it.
+3. That page **is** the "html link": open it, the draft is right there to
+   select and copy into your real email client. Nothing here sends
+   anything.
+
+**Why store the input notes alongside the output**: this table is meant to
+be the seed of FB's own RAG corpus later (per the same instruction) --
+nothing here builds embeddings or retrieval, that's real, separate work this
+doesn't attempt, but the structured input+output pairing already exists so
+that project doesn't have to reconstruct history from scratch when it
+starts.
 
 ## How sources get merged into one lead
 
