@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leads-crm
+  namespace: fb-tools-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: leads-crm
+  template:
+    metadata:
+      labels:
+        app: leads-crm
+    spec:
+      containers:
+        - name: leads-crm
+          image: europe-west1-docker.pkg.dev/tourathy-project/prod-images/leads-crm:manual-test
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8506
+          env:
+            - name: LEADS_DB
+              value: /data/leads.sqlite3
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-secrets
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+          volumeMounts:
+            - name: leads-crm-data
+              mountPath: /data
+      volumes:
+        - name: leads-crm-data
+          persistentVolumeClaim:
+            claimName: leads-crm-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: leads-crm
+  namespace: fb-tools-gateway
+spec:
+  selector:
+    app: leads-crm
+  ports:
+    - port: 8506
+      targetPort: 8506

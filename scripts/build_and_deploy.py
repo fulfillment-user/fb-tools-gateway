@@ -1,27 +1,23 @@
 #!/usr/bin/env python3
 """
-FB Tools Gateway -- the one script devops wires into a pipeline that runs on
-every push to THIS repo. It discovers every apps/*/source.yaml, clones that
-app's own repo at the pinned ref, builds its Dockerfile, tags and pushes the
-image, then (unless SKIP_DEPLOY=1) redeploys the whole stack.
+FB Tools Gateway - Build and push Docker images.
 
-Onboarding a brand new tool never touches this script or needs a new
-pipeline -- it's just a new apps/<slug>/source.yaml (see docs/RUNBOOK.md).
-That's the entire point of routing every app through one manifest instead of
-giving each tool its own build pipeline.
+This script:
+1. Discovers apps/*/source.yaml
+2. Clones external repositories when necessary
+3. Builds Docker images
+4. Pushes Docker images to Artifact Registry
 
-Requires on whatever machine runs this: git, docker, python3 with PyYAML,
-and the container already authenticated to REGISTRY (docker login /
-gcloud auth configure-docker) before this runs -- this script doesn't handle
-registry auth itself, that's environment setup, not build logic.
+Deployment to GKE is handled separately by GitHub Actions.
 
-Env vars:
-  REGISTRY     required. e.g. europe-west1-docker.pkg.dev/PROJECT/fb-tools
-  SKIP_DEPLOY  set to "1" to only build+push images, skipping the final
-               `docker compose up -d` -- use this if your pipeline's build
-               step runs somewhere other than the actual deploy box (e.g. a
-               CI runner) and you redeploy through your own existing
-               mechanism afterward.
+Required environment variables:
+  REGISTRY
+    Example:
+    europe-west1-docker.pkg.dev/tourathy-project/prod-images
+
+  IMAGE_TAG
+    Docker image tag.
+    In GitHub Actions this should normally be github.sha.
 """
 import os
 import subprocess
@@ -30,6 +26,7 @@ import tempfile
 from pathlib import Path
 
 import yaml
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 APPS_DIR = REPO_ROOT / "apps"
@@ -40,60 +37,152 @@ def run(cmd, **kwargs):
     subprocess.run(cmd, check=True, **kwargs)
 
 
-def build_app(slug: str, manifest_path: Path, workdir: Path, registry: str) -> str:
+def build_app(
+    slug: str,
+    manifest_path: Path,
+    workdir: Path,
+    registry: str,
+    image_tag: str,
+) -> str:
+
     manifest = yaml.safe_load(manifest_path.read_text())
+
     dockerfile = manifest.get("dockerfile", "Dockerfile")
     context = manifest.get("context", ".")
     repo = manifest.get("repo", "local")
 
     if repo == "local":
-        # App's code lives directly in apps/<slug>/ in this repo -- no clone
-        # needed. Use this for anything built specifically for this gateway
-        # rather than pulled from an existing product repo.
         build_dir = manifest_path.parent
-        print(f"\n=== {slug}: building from local apps/{slug}/ (no clone) ===", flush=True)
+
+        print(
+            f"\n=== {slug}: building from local apps/{slug}/ ===",
+            flush=True,
+        )
+
     else:
         ref = manifest.get("ref", "main")
         build_dir = workdir / slug
-        print(f"\n=== {slug}: cloning {repo}@{ref} ===", flush=True)
-        run(["git", "clone", "--depth", "1", "--branch", ref, repo, str(build_dir)])
 
-    image = f"{registry}/{slug}:latest"
-    print(f"=== {slug}: building {image} ===", flush=True)
-    run(["docker", "build", "-f", str(build_dir / dockerfile), "-t", image,
-         str(build_dir / context)])
-    run(["docker", "push", image])
+        print(
+            f"\n=== {slug}: cloning {repo}@{ref} ===",
+            flush=True,
+        )
+
+        run([
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--branch",
+            ref,
+            repo,
+            str(build_dir),
+        ])
+
+    image = f"{registry}/{slug}:{image_tag}"
+
+    print(
+        f"=== {slug}: building {image} ===",
+        flush=True,
+    )
+
+    run([
+        "docker",
+        "build",
+        "-f",
+        str(build_dir / dockerfile),
+        "-t",
+        image,
+        str(build_dir / context),
+    ])
+
+    print(
+        f"=== {slug}: pushing {image} ===",
+        flush=True,
+    )
+
+    run([
+        "docker",
+        "push",
+        image,
+    ])
+
     return image
 
 
 def main():
-    registry = os.environ.get("REGISTRY")
-    if not registry:
-        sys.exit("Set REGISTRY, e.g. europe-west1-docker.pkg.dev/PROJECT/fb-tools")
 
-    manifests = sorted(APPS_DIR.glob("*/source.yaml"))
+    registry = os.environ.get("REGISTRY")
+    image_tag = os.environ.get("IMAGE_TAG")
+
+    if not registry:
+        sys.exit(
+            "REGISTRY is required. Example: "
+            "europe-west1-docker.pkg.dev/"
+            "tourathy-project/prod-images"
+        )
+
+    if not image_tag:
+        sys.exit(
+            "IMAGE_TAG is required. "
+            "Use the Git commit SHA in CI/CD."
+        )
+
+    print(f"\nRegistry: {registry}")
+    print(f"Image tag: {image_tag}")
+
+    manifests = sorted(
+        APPS_DIR.glob("*/source.yaml")
+    )
+
     if not manifests:
-        print("No apps/*/source.yaml found -- nothing to build from a manifest.")
+        print(
+            "No apps/*/source.yaml found."
+        )
 
     with tempfile.TemporaryDirectory() as tmp:
+
         workdir = Path(tmp)
+
         for manifest_path in manifests:
+
             slug = manifest_path.parent.name
-            build_app(slug, manifest_path, workdir, registry)
 
-    print("\n=== building auth-service (this repo's own image) ===", flush=True)
-    auth_image = f"{registry}/auth-service:latest"
-    run(["docker", "build", "-t", auth_image, str(REPO_ROOT / "auth-service")])
-    run(["docker", "push", auth_image])
+            build_app(
+                slug,
+                manifest_path,
+                workdir,
+                registry,
+                image_tag,
+            )
 
-    if os.environ.get("SKIP_DEPLOY") == "1":
-        print("\nSKIP_DEPLOY=1 set -- built and pushed only, not redeploying.")
-        return
+    # Build auth-service
 
-    print("\n=== redeploying (docker compose, on this machine) ===", flush=True)
-    env = {**os.environ, "REGISTRY": registry}
-    run(["docker", "compose", "pull"], cwd=REPO_ROOT, env=env)
-    run(["docker", "compose", "up", "-d"], cwd=REPO_ROOT, env=env)
+    print(
+        "\n=== building auth-service ===",
+        flush=True,
+    )
+
+    auth_image = (
+        f"{registry}/auth-service:{image_tag}"
+    )
+
+    run([
+        "docker",
+        "build",
+        "-t",
+        auth_image,
+        str(REPO_ROOT / "auth-service"),
+    ])
+
+    run([
+        "docker",
+        "push",
+        auth_image,
+    ])
+
+    print("\n=== Build and push completed ===")
+    print("Deployment to GKE is handled by GitHub Actions.")
 
 
 if __name__ == "__main__":

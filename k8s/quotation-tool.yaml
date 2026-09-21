@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quotation-tool
+  namespace: fb-tools-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quotation-tool
+  template:
+    metadata:
+      labels:
+        app: quotation-tool
+    spec:
+      containers:
+        - name: quotation-tool
+          image: REGISTRY_PLACEHOLDER/quotation-tool:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8505
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quotation-tool
+  namespace: fb-tools-gateway
+spec:
+  selector:
+    app: quotation-tool
+  ports:
+    - port: 8505
+      targetPort: 8505
