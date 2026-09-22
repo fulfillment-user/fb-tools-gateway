@@ -28,7 +28,7 @@ apps:
     public: false
   leads-crm:
     display_name: "Leads CRM"
-    public: false
+    public: true
 
 roles:
   sales:
@@ -37,6 +37,6 @@ roles:
 users:
   kais:
     display_name: "Kais"
-    password_hash: "$2b$12$JK4//IC/ufxUl0asM0XUe.TkBBc0RHEplfWjRt9R.T06SzAHLZyES"
+    password_hash: "$2b$12$3AOm3dfbWkts21qzNpW1O.jzVJG7L5xs2tSGcg9JVJp4K35aHFcEa"
     is_admin: true
     calendly_url: "https://calendly.com/kais-khadhraoui/catch-up-with-kais"
