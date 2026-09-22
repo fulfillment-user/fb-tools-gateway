@@ -13,6 +13,9 @@ env:
   NAMESPACE: fb-tools-gateway
 
 jobs:
+  # ============================================================
+  # BUILD
+  # ============================================================
   build:
     name: Build and Push Docker Images
     runs-on: ubuntu-latest
@@ -21,6 +24,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # Authenticate to Google Cloud for Artifact Registry
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
@@ -29,6 +33,7 @@ jobs:
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
 
+      # Allow Docker to push images to Artifact Registry
       - name: Configure Docker for Artifact Registry
         run: |
           gcloud auth configure-docker ${{ env.REGISTRY_HOST }} --quiet
@@ -37,6 +42,18 @@ jobs:
         run: |
           pip install -r scripts/requirements.txt
 
+      # Allow build_and_deploy.py to clone the private
+      # fulfillment-user/fb-rate-engine repository
+      - name: Configure access to fb-rate-engine
+        env:
+          GH_TOKEN: ${{ secrets.FB_RATE_ENGINE_TOKEN }}
+        run: |
+          git config --global \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "https://github.com/"
+
+      # Detect apps, clone external repositories,
+      # build Docker images and push them to Artifact Registry
       - name: Build and Push all apps
         env:
           REGISTRY: ${{ env.REGISTRY_HOST }}/${{ env.PROJECT_ID }}/${{ env.REGISTRY_REPO }}
@@ -44,6 +61,7 @@ jobs:
         run: |
           python3 scripts/build_and_deploy.py
 
+      # Detect which applications must be deployed
       - name: List deployable app slugs
         id: apps
         run: |
@@ -56,6 +74,9 @@ jobs:
     outputs:
       slugs: ${{ steps.apps.outputs.slugs }}
 
+  # ============================================================
+  # DEPLOY
+  # ============================================================
   deploy:
     name: Deploy to GKE
     runs-on: ubuntu-latest
@@ -65,11 +86,13 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # Authenticate to Google Cloud for GKE
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
           credentials_json: '${{ secrets.GCP_K8S_KEY }}'
 
+      # Connect kubectl to the GKE cluster
       - name: Get GKE Credentials
         uses: google-github-actions/get-gke-credentials@v2
         with:
@@ -77,7 +100,7 @@ jobs:
           location: ${{ secrets.GKE_ZONE }}
           project_id: ${{ env.PROJECT_ID }}
 
-      # config.yaml for auth-service
+      # Sync config.yaml used by auth-service
       - name: Sync gateway-config
         run: |
           kubectl create configmap gateway-config \
@@ -85,7 +108,7 @@ jobs:
             --namespace "${NAMESPACE}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      # Caddyfile for Caddy
+      # Sync Caddy configuration
       - name: Sync gateway-caddyfile
         run: |
           kubectl create configmap gateway-caddyfile \
@@ -93,12 +116,14 @@ jobs:
             --namespace "${NAMESPACE}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
+      # Update auth-service
       - name: Update auth-service image
         run: |
           kubectl set image deployment/auth-service \
             auth-service=${REGISTRY_HOST}/${PROJECT_ID}/${REGISTRY_REPO}/auth-service:${IMAGE_TAG} \
             -n "${NAMESPACE}"
 
+      # Update Leads CRM, Quotation Tool, etc.
       - name: Update application images
         run: |
           IFS=',' read -ra SLUGS <<< "${{ needs.build.outputs.slugs }}"
@@ -111,6 +136,7 @@ jobs:
               -n "${NAMESPACE}"
           done
 
+      # Wait until deployments are ready
       - name: Check Rollout Status
         run: |
           kubectl rollout status deployment/auth-service \
@@ -125,6 +151,7 @@ jobs:
               --timeout=5m
           done
 
+      # Final verification
       - name: Verify Deployment
         run: |
           kubectl get deployments -n "${NAMESPACE}"
