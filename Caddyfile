@@ -8,12 +8,15 @@ tools.fulfillmentbridge.com {
 	handle /login* {
 		reverse_proxy auth-service:8000
 	}
+
 	handle /logout* {
 		reverse_proxy auth-service:8000
 	}
+
 	handle /admin* {
 		reverse_proxy auth-service:8000
 	}
+
 	handle / {
 		reverse_proxy auth-service:8000
 	}
@@ -27,6 +30,12 @@ tools.fulfillmentbridge.com {
 		forward_auth auth-service:8000 {
 			uri /verify
 			copy_headers X-Auth-User
+			# Streamlit's own WebSocket upgrade goes straight to
+			# quotation-tool via reverse_proxy below -- this internal
+			# /verify call must stay a plain HTTP GET, or auth-service's
+			# ASGI server rejects it before verify() even runs (403).
+			header_up -Connection
+			header_up -Upgrade
 		}
 		reverse_proxy quotation-tool:8505
 	}
@@ -44,6 +53,7 @@ tools.fulfillmentbridge.com {
 		handle @needs_login {
 			redir * /login?next={http.request.orig_uri} 302
 		}
+
 		@forbidden expression {http.error.status_code} == 403
 		handle @forbidden {
 			respond "You don't have access to this tool. Ask Kais for access." 403
