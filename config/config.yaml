@@ -25,7 +25,7 @@
 apps:
   quotation-tool:
     display_name: "FB Quotation Tool"
-    public: false
+    public: true
   leads-crm:
     display_name: "Leads CRM"
     public: true
